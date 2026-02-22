@@ -79,6 +79,10 @@ jobs:
             CLOVER_API_TOKEN=${{ secrets.CLOVER_API_TOKEN }}
             EOF
 
+            # Stop any legacy standalone containers on port 8000
+            docker stop app 2>/dev/null || true
+            docker rm app 2>/dev/null || true
+
             # Build & start containers
             docker compose down --remove-orphans
             docker compose up --build -d
