@@ -1,5 +1,4 @@
 #!/bin/sh
-
 set -e
 
 echo "Waiting for PostgreSQL to be ready..."
@@ -14,9 +13,9 @@ python manage.py migrate --noinput
 echo "Collecting static files..."
 python manage.py collectstatic --noinput
 
-echo "Starting Uvicorn..."
-exec uvicorn config.asgi:application \
-    --host 0.0.0.0 \
-    --port 8000 \
+echo "Starting Gunicorn with Uvicorn workers..."
+exec gunicorn config.asgi:application \
+    -k uvicorn.workers.UvicornWorker \
+    --bind 0.0.0.0:8000 \
     --workers 3 \
-    --access-log
+    --log-level info
