@@ -13,21 +13,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Build Docker image
-        run: docker build -t app:latest .
-
-      - name: Save Docker image
-        run: docker save app:latest | gzip > app.tar.gz
-
-      - name: Copy to server
+      # ── 1. Copy source code to VPS ─────────────────────────────────────────
+      - name: Copy source code to server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          source: "app.tar.gz"
-          target: "~/"
+          source: "."
+          target: "~/app"
+          rm: true          # wipe old files before copying
 
+      # ── 2. Generate .env + docker-compose up ───────────────────────────────
       - name: Deploy on server
         uses: appleboy/ssh-action@v1.0.0
         with:
@@ -35,10 +32,53 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            docker load < app.tar.gz
-            docker stop app || true
-            docker rm app || true
-            docker run -d \
-              --name app \
-              -p 8000:8000 \
-              app:latest
+            set -e
+            cd ~/app
+
+            # Generate .env from GitHub Secrets
+            cat > .env <<EOF
+            # Django
+            ENVIRONMENT=${{ secrets.ENVIRONMENT }}
+            DEBUG=${{ secrets.DEBUG }}
+            SECRET_KEY=${{ secrets.SECRET_KEY }}
+            ALLOWED_HOSTS=${{ secrets.ALLOWED_HOSTS }}
+
+            # Database
+            DATABASE_URL=${{ secrets.DATABASE_URL }}
+            POSTGRES_HOST=db
+            POSTGRES_PORT=5432
+            POSTGRES_USER=${{ secrets.POSTGRES_USER }}
+            POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+            POSTGRES_DB=${{ secrets.POSTGRES_DB }}
+
+            # Email
+            EMAIL_HOST=${{ secrets.EMAIL_HOST }}
+            EMAIL_PORT=${{ secrets.EMAIL_PORT }}
+            EMAIL_USE_TLS=${{ secrets.EMAIL_USE_TLS }}
+            EMAIL_HOST_USER=${{ secrets.EMAIL_HOST_USER }}
+            EMAIL_HOST_PASSWORD=${{ secrets.EMAIL_HOST_PASSWORD }}
+            DEFAULT_FROM_EMAIL=${{ secrets.DEFAULT_FROM_EMAIL }}
+
+            # Celery & Redis
+            CELERY_BROKER_URL=${{ secrets.CELERY_BROKER_URL }}
+            CELERY_RESULT_BACKEND=${{ secrets.CELERY_RESULT_BACKEND }}
+
+            # Cloudinary
+            CLOUD_NAME=${{ secrets.CLOUD_NAME }}
+            CLOUDINARY_API_KEY=${{ secrets.CLOUDINARY_API_KEY }}
+            CLOUDINARY_API_SECRET=${{ secrets.CLOUDINARY_API_SECRET }}
+            CLOUDINARY_WEBHOOK_SECRET=${{ secrets.CLOUDINARY_WEBHOOK_SECRET }}
+
+            # Square
+            SQUARE_ENVIRONMENT=${{ secrets.SQUARE_ENVIRONMENT }}
+            SQUARE_ACCESS_TOKEN=${{ secrets.SQUARE_ACCESS_TOKEN }}
+
+            # Clover
+            CLOVER_ENVIRONMENT=${{ secrets.CLOVER_ENVIRONMENT }}
+            CLOVER_MERCHANT_ID=${{ secrets.CLOVER_MERCHANT_ID }}
+            CLOVER_API_TOKEN=${{ secrets.CLOVER_API_TOKEN }}
+            EOF
+
+            # Build & start containers
+            docker compose down --remove-orphans
+            docker compose up --build -d
